@@ -135,6 +135,11 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 
 	struct archive_entry *entry;
 	while(archive_read_next_header(archive, &entry) == ARCHIVE_OK) {
+        mode_t filetype = archive_entry_filetype(entry);
+        if (S_ISDIR(filetype)) {
+            archive_read_data_skip(archive);
+            continue;
+        }
 		const gchar *entry_name = archive_entry_pathname(entry);
 
 		#if ARCHIVE_VERSION_NUMBER < 3003002
