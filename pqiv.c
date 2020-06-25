@@ -4317,8 +4317,8 @@ void calculate_base_draw_pos_and_size(int *image_transform_width, int *image_tra
 }/*}}}*/
 #ifndef CONFIGURED_WITHOUT_MONTAGE_MODE
 void montage_window_set_cursor(int pos_x, int pos_y) {/*{{{*/
-	const unsigned n_thumbs_x = main_window_width / (option_thumbnails.width + 10);
-	const unsigned n_thumbs_y = main_window_height / (option_thumbnails.height + 10);
+	const unsigned n_thumbs_x = main_window_width / screen_scale_factor / (option_thumbnails.width + 10);
+	const unsigned n_thumbs_y = main_window_height / screen_scale_factor / (option_thumbnails.height + 10);
 	const size_t number_of_images = (ptrdiff_t)bostree_node_count(file_tree);
 
 	if(!montage_window_control.selected_node) {
@@ -4368,8 +4368,8 @@ gboolean montage_window_get_move_cursor_target(int pos_x, int pos_y, int move_y_
 	   scrolling
 	 */
 
-	const int n_thumbs_x = main_window_width / (option_thumbnails.width + 10);
-	const int n_thumbs_y = main_window_height / (option_thumbnails.height + 10);
+	const int n_thumbs_x = main_window_width / screen_scale_factor / (option_thumbnails.width + 10);
+	const int n_thumbs_y = main_window_height / screen_scale_factor / (option_thumbnails.height + 10);
 	const ptrdiff_t number_of_images = (ptrdiff_t)bostree_node_count(file_tree);
 	const int n_rows_total       = (number_of_images + n_thumbs_x - 1) / n_thumbs_x;
 	const int last_row_n_thumbs  = (number_of_images % n_thumbs_x == 0) ? n_thumbs_x : number_of_images % n_thumbs_x;
@@ -4480,8 +4480,8 @@ gboolean montage_window_get_move_cursor_target(int pos_x, int pos_y, int move_y_
 }/*}}}*/
 void montage_window_move_cursor(int move_x, int move_y, int move_y_pages) {/*{{{*/
 	// Must be called with an active lock.
-	const int n_thumbs_x = main_window_width / (option_thumbnails.width + 10);
-	const int n_thumbs_y = main_window_height / (option_thumbnails.height + 10);
+	const int n_thumbs_x = main_window_width / screen_scale_factor / (option_thumbnails.width + 10);
+	const int n_thumbs_y = main_window_height / screen_scale_factor / (option_thumbnails.height + 10);
 
 	if(n_thumbs_x == 0 || n_thumbs_y == 0) {
 		return;
@@ -4557,8 +4557,8 @@ struct window_draw_thumbnail_montage_show_binding_overlays_data {
 	char *active_prefix;
 };
 void window_draw_thumbnail_montage_show_binding_overlays_looper(gpointer key, gpointer value, gpointer user_data) {/*{{{*/
-	const int n_thumbs_x = main_window_width / (option_thumbnails.width + 10);
-	const int n_thumbs_y = main_window_height / (option_thumbnails.height + 10);
+	const int n_thumbs_x = main_window_width / screen_scale_factor / (option_thumbnails.width + 10);
+	const int n_thumbs_y = main_window_height / screen_scale_factor / (option_thumbnails.height + 10);
 	const ptrdiff_t number_of_images = (ptrdiff_t)bostree_node_count(file_tree);
 	const int n_rows_total       = (number_of_images + n_thumbs_x - 1) / n_thumbs_x;
 	const int last_row_n_thumbs  = (number_of_images % n_thumbs_x == 0) ? n_thumbs_x : number_of_images % n_thumbs_x;
@@ -4663,8 +4663,8 @@ void window_draw_thumbnail_montage_show_binding_overlays_looper(gpointer key, gp
 		cairo_save(cr_arg);
 
 		cairo_translate(cr_arg,
-			(main_window_width  - n_thumbs_x * (option_thumbnails.width + 10)) / 2  + data.current_x * (option_thumbnails.width + 10),
-			(main_window_height - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + data.current_y * (option_thumbnails.height + 10)
+			(main_window_width / screen_scale_factor - n_thumbs_x * (option_thumbnails.width + 10)) / 2  + data.current_x * (option_thumbnails.width + 10),
+			(main_window_height / screen_scale_factor - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + data.current_y * (option_thumbnails.height + 10)
 		);
 
 		BOSNode *node = bostree_select(file_tree, (montage_window_control.scroll_y + data.current_y) * n_thumbs_x + data.current_x);
@@ -4709,8 +4709,8 @@ gboolean window_draw_thumbnail_montage(cairo_t *cr_arg) {/*{{{*/
 	cairo_restore(cr_arg);
 
 	// Calculate how many thumbnails to draw
-	const unsigned n_thumbs_x = main_window_width / (option_thumbnails.width + 10);
-	const unsigned n_thumbs_y = main_window_height / (option_thumbnails.height + 10);
+	const unsigned n_thumbs_x = main_window_width / screen_scale_factor / (option_thumbnails.width + 10);
+	const unsigned n_thumbs_y = main_window_height / screen_scale_factor / (option_thumbnails.height + 10);
 	size_t top_left_id = montage_window_control.scroll_y * n_thumbs_x;
 
 	BOSNode *selected_node = bostree_node_weak_unref(file_tree, bostree_node_weak_ref(montage_window_control.selected_node));
@@ -4743,8 +4743,8 @@ gboolean window_draw_thumbnail_montage(cairo_t *cr_arg) {/*{{{*/
 		/*/ Debug: Draw a red box around the thumbnail box
 		cairo_save(cr_arg);
 		cairo_translate(cr_arg,
-			(main_window_width - n_thumbs_x * (option_thumbnails.width + 10)) / 2   + (draw_now % n_thumbs_x) * (option_thumbnails.width + 10),
-			(main_window_height - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + (draw_now / n_thumbs_x) * (option_thumbnails.height + 10)
+			(main_window_width / screen_scale_factor - n_thumbs_x * (option_thumbnails.width + 10)) / 2   + (draw_now % n_thumbs_x) * (option_thumbnails.width + 10),
+			(main_window_height / screen_scale_factor - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + (draw_now / n_thumbs_x) * (option_thumbnails.height + 10)
 		);
 		cairo_set_source_rgb(cr_arg, 1., 0, 0);
 		cairo_rectangle(cr_arg, 0, 0, option_thumbnails.width + 10, option_thumbnails.height + 10);
@@ -4754,8 +4754,8 @@ gboolean window_draw_thumbnail_montage(cairo_t *cr_arg) {/*{{{*/
 		if(thumb_file->thumbnail) {
 			cairo_save(cr_arg);
 			cairo_translate(cr_arg,
-				(main_window_width - n_thumbs_x * (option_thumbnails.width + 10)) / 2   + (draw_now % n_thumbs_x) * (option_thumbnails.width + 10)  + (option_thumbnails.width + 10 - cairo_image_surface_get_width(thumb_file->thumbnail))/2,
-				(main_window_height - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + (draw_now / n_thumbs_x) * (option_thumbnails.height + 10) + (option_thumbnails.height + 10 - cairo_image_surface_get_height(thumb_file->thumbnail))/2
+				(main_window_width / screen_scale_factor - n_thumbs_x * (option_thumbnails.width + 10)) / 2   + (draw_now % n_thumbs_x) * (option_thumbnails.width + 10)  + (option_thumbnails.width + 10 - cairo_image_surface_get_width(thumb_file->thumbnail))/2,
+				(main_window_height / screen_scale_factor - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + (draw_now / n_thumbs_x) * (option_thumbnails.height + 10) + (option_thumbnails.height + 10 - cairo_image_surface_get_height(thumb_file->thumbnail))/2
 			);
 			cairo_set_source_surface(cr_arg, thumb_file->thumbnail, 0, 0);
 			cairo_new_path(cr_arg);
@@ -4776,8 +4776,8 @@ gboolean window_draw_thumbnail_montage(cairo_t *cr_arg) {/*{{{*/
 		else if(top_left_id + draw_now == selection_rank) {
 			cairo_save(cr_arg);
 			cairo_translate(cr_arg,
-				(main_window_width - n_thumbs_x * (option_thumbnails.width + 10)) / 2   + (draw_now % n_thumbs_x) * (option_thumbnails.width + 10) + (option_thumbnails.width - 5)/2,
-				(main_window_height - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + (draw_now / n_thumbs_x) * (option_thumbnails.height + 10) + (option_thumbnails.height - 5)/2
+				(main_window_width / screen_scale_factor - n_thumbs_x * (option_thumbnails.width + 10)) / 2   + (draw_now % n_thumbs_x) * (option_thumbnails.width + 10) + (option_thumbnails.width - 5)/2,
+				(main_window_height / screen_scale_factor - n_thumbs_y * (option_thumbnails.height + 10)) / 2 + (draw_now / n_thumbs_x) * (option_thumbnails.height + 10) + (option_thumbnails.height - 5)/2
 			);
 			cairo_rectangle(cr_arg, 0, 0, 5, 5);
 			cairo_set_source_rgb(cr_arg, option_box_colors.bg_red, option_box_colors.bg_green, option_box_colors.bg_blue);
@@ -6274,8 +6274,8 @@ void action(pqiv_action_t action_id, pqiv_action_parameter_t parameter) {/*{{{*/
 			follow_mode_key_binding.next_key_bindings = g_hash_table_new_full((GHashFunc)g_direct_hash, (GEqualFunc)g_direct_equal, NULL, key_binding_t_destroy_callback);
 
 			{
-				const int n_thumbs_x = main_window_width / (option_thumbnails.width + 10);
-				const int n_thumbs_y = main_window_height / (option_thumbnails.height + 10);
+				const int n_thumbs_x = main_window_width / screen_scale_factor / (option_thumbnails.width + 10);
+				const int n_thumbs_y = main_window_height / screen_scale_factor / (option_thumbnails.height + 10);
 				const ptrdiff_t number_of_images = (ptrdiff_t)bostree_node_count(file_tree);
 				const ptrdiff_t visible_thumbnails = ((montage_window_control.scroll_y + n_thumbs_y) * n_thumbs_x > number_of_images ? number_of_images - montage_window_control.scroll_y * n_thumbs_x : n_thumbs_x * n_thumbs_y);
 				const int number_of_characters = strlen(parameter.pcharptr);
@@ -6882,8 +6882,8 @@ gboolean window_button_press_callback(GtkWidget *widget, GdkEventButton *event, 
 		// Thumbnails are drawn such that the whole mosaique is centered. Undo
 		// that to find the correct index.
 		//
-		event->x -= (main_window_width % (option_thumbnails.width + 10)) / 2;
-		event->y -= (main_window_height % (option_thumbnails.height + 10)) / 2;
+		event->x -= (main_window_width / screen_scale_factor % (option_thumbnails.width + 10)) / 2;
+		event->y -= (main_window_height / screen_scale_factor % (option_thumbnails.height + 10)) / 2;
 		if(event->x < 0) event->x = 0;
 		if(event->y < 0) event->y = 0;
 
