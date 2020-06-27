@@ -5219,10 +5219,23 @@ gboolean window_draw_callback(GtkWidget *widget, cairo_t *cr_arg, gpointer user_
 
 			cairo_set_source_rgb(cr_arg, option_box_colors.bg_red, option_box_colors.bg_green, option_box_colors.bg_blue);
 			cairo_translate(cr_arg, 10 * screen_scale_factor, 20 * screen_scale_factor);
+			PangoLayout *layout = pango_cairo_create_layout(cr_arg);
+			if (layout) {
+				PangoFontDescription *desc = pango_font_description_new();
+				pango_font_description_set_family_static(desc, "sans-serif");
+				pango_font_description_set_absolute_size(desc, pango_units_from_double(font_size));
+				pango_layout_set_font_description(layout, desc);
+				pango_font_description_free(desc);
+				pango_layout_set_text(layout, current_info_text, -1);
+				PangoLayoutLine *line = pango_layout_get_line_readonly(layout, 0);
+				pango_cairo_layout_line_path(cr_arg, line);
+			} else {
 			cairo_text_path(cr_arg, current_info_text);
+			}
 			cairo_path_extents(cr_arg, &x1, &y1, &x2, &y2);
 
 			if(x2 > main_window_width - 10 * screen_scale_factor && !main_window_in_fullscreen) {
+				g_object_unref(layout);
 				cairo_new_path(cr_arg);
 				cairo_restore(cr_arg);
 				cairo_save(cr_arg);
@@ -5239,6 +5252,7 @@ gboolean window_draw_callback(GtkWidget *widget, cairo_t *cr_arg, gpointer user_
 			cairo_append_path(cr_arg, text_path);
 			cairo_fill(cr_arg);
 			cairo_path_destroy(text_path);
+			g_object_unref(layout);
 
 			break;
 		}
