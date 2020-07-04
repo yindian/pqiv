@@ -7092,7 +7092,11 @@ void window_screen_window_manager_changed_callback(gpointer user_data) {/*{{{*/
 		// TODO Would _NET_WM_ALLOWED_ACTIONS -> _NET_WM_ACTION_RESIZE and _NET_WM_ACTION_FULLSCREEN  be a better choice here?
 		#if GTK_MAJOR_VERSION >= 3
 			if(GDK_IS_X11_SCREEN(screen)) {
+#if 0
 				wm_supports_fullscreen = gdk_x11_screen_supports_net_wm_hint(screen, gdk_x11_xatom_to_atom(gdk_x11_get_xatom_by_name("_NET_WM_STATE_FULLSCREEN")));
+#else
+				wm_supports_fullscreen = strcmp(gdk_x11_screen_get_window_manager_name(screen), "unknown");
+#endif
 				wm_supports_moveresize = gdk_x11_screen_supports_net_wm_hint(screen, gdk_x11_xatom_to_atom(gdk_x11_get_xatom_by_name("_NET_MOVERESIZE_WINDOW")));
 				wm_supports_framedrawn = gdk_x11_screen_supports_net_wm_hint(screen, gdk_x11_xatom_to_atom(gdk_x11_get_xatom_by_name("_NET_WM_FRAME_DRAWN")));
 			}
