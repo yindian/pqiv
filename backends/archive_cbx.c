@@ -85,7 +85,7 @@ BOSNode *file_type_archive_cbx_alloc(load_images_state_t state, file_t *file) {/
         }
 		const gchar *entry_name = archive_entry_pathname(entry);
 
-#if 0
+#if ARCHIVE_VERSION_NUMBER <= 3001900
 		file_t *new_file = image_loader_duplicate_file(file, NULL, g_strdup_printf("%s#%s", file->display_name, entry_name), g_strdup_printf("%s#%s", file->sort_name, entry_name));
 #else
 		const gchar *entry_name_utf8 = g_utf8_validate(entry_name, -1, NULL) ? entry_name : archive_entry_pathname_utf8(entry);
