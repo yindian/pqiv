@@ -38,6 +38,65 @@ typedef struct {
 	cairo_surface_t *image_surface;
 } file_private_data_archive_t;
 
+#if ARCHIVE_VERSION_NUMBER > 3001002
+static int pass_inited = 0;
+static GList *pass_list = NULL;
+static void do_parse_passphrase_file(const gchar *filename) {/*{{{*/
+	GFile *f = g_file_new_for_path(filename);
+	GFileInputStream *fis = g_file_read(f, NULL, NULL);
+	if (fis) {
+		GDataInputStream *dis = g_data_input_stream_new(G_INPUT_STREAM(fis));
+		if (dis) {
+			char *line;
+			gsize len;
+			while ((line = g_data_input_stream_read_line(dis, &len, NULL, NULL)) != NULL) {
+				pass_list = g_list_append(pass_list, g_strndup(line, len));
+			}
+			g_object_unref(dis);
+		}
+		g_object_unref(fis);
+	}
+	g_object_unref(f);
+}/*}}}*/
+static void parse_passphrase_file() {/*{{{*/
+	// Check for a configuration file
+	GQueue *test_dirs = g_queue_new();
+	const gchar *config_dir = g_getenv("XDG_CONFIG_HOME");
+	if(!config_dir) {
+		g_queue_push_tail(test_dirs, g_build_filename(g_getenv("HOME"), ".config", "pqivpass", NULL));
+	}
+	else {
+		g_queue_push_tail(test_dirs, g_build_filename(config_dir, "pqivpass", NULL));
+	}
+	g_queue_push_tail(test_dirs, g_build_filename(g_getenv("HOME"), ".pqivpass", NULL));
+	const gchar *system_config_dirs = g_getenv("XDG_CONFIG_DIRS");
+	if(system_config_dirs) {
+		gchar **split_system_config_dirs = g_strsplit(system_config_dirs, ":", 0);
+		for(gchar **system_dir = split_system_config_dirs; *system_dir; system_dir++) {
+			g_queue_push_tail(test_dirs, g_build_filename(*system_dir, "pqivpass", NULL));
+		}
+		g_strfreev(split_system_config_dirs);
+	}
+	g_queue_push_tail(test_dirs, g_build_filename(G_DIR_SEPARATOR_S "etc", "pqivpass", NULL));
+
+	gchar *pass_file_name;
+	while((pass_file_name = g_queue_pop_head(test_dirs))) {
+		if(g_file_test(pass_file_name, G_FILE_TEST_EXISTS)) {
+			do_parse_passphrase_file(pass_file_name);
+			g_free(pass_file_name);
+			break;
+		}
+		g_free(pass_file_name);
+	}
+
+	while((pass_file_name = g_queue_pop_head(test_dirs))) {
+		g_free(pass_file_name);
+	}
+	g_queue_free(test_dirs);
+	pass_inited = 1;
+}/*}}}*/
+#endif
+
 static struct archive *file_type_archive_cbx_gen_archive(GBytes *data) {/*{{{*/
 	struct archive *archive = archive_read_new();
 	archive_read_support_format_zip(archive);
@@ -45,6 +104,17 @@ static struct archive *file_type_archive_cbx_gen_archive(GBytes *data) {/*{{{*/
 	archive_read_support_format_7zip(archive);
 	archive_read_support_format_tar(archive);
 	archive_read_support_filter_all(archive);
+#if ARCHIVE_VERSION_NUMBER > 3001002
+	if (!pass_inited) {
+		parse_passphrase_file();
+	}
+	if (pass_list) {
+		GList *pass;
+		for (pass = pass_list; pass; pass = g_list_next(pass)) {
+			archive_read_add_passphrase(archive, pass->data);
+		}
+	}
+#endif
 
 	gsize data_size;
 	char *data_ptr = (char *)g_bytes_get_data(data, &data_size);
@@ -89,7 +159,12 @@ BOSNode *file_type_archive_cbx_alloc(load_images_state_t state, file_t *file) {/
 		file_t *new_file = image_loader_duplicate_file(file, NULL, g_strdup_printf("%s#%s", file->display_name, entry_name), g_strdup_printf("%s#%s", file->sort_name, entry_name));
 #else
 		const gchar *entry_name_utf8 = g_utf8_validate(entry_name, -1, NULL) ? entry_name : archive_entry_pathname_utf8(entry);
-		if (entry_name_utf8 == NULL) entry_name_utf8 = entry_name;
+		if (entry_name_utf8 == NULL) {
+			entry_name_utf8 = g_convert(entry_name, -1, "utf-8", "cp936", NULL, NULL, NULL);
+			if (entry_name_utf8 == NULL) {
+				entry_name_utf8 = g_str_to_ascii(entry_name, NULL);
+			}
+		}
 		gchar *sub_name_utf8 = g_strdup_printf("%s#%s", file->display_name, entry_name_utf8);
 		file_t *new_file = image_loader_duplicate_file(file, NULL, sub_name_utf8, g_strdup_printf("%s#%s", file->sort_name, entry_name));
 #endif
