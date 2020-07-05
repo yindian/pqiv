@@ -159,7 +159,14 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 
 		// Prepare a new file_t for this entry
 		gchar *sub_name = g_strdup_printf("%s#%s", file->display_name, entry_name);
+#if 0
 		file_t *new_file = image_loader_duplicate_file(file, g_strdup(sub_name), g_strdup(sub_name), sub_name);
+#else
+		const gchar *entry_name_utf8 = g_utf8_validate(entry_name, -1, NULL) ? entry_name : archive_entry_pathname_utf8(entry);
+		if (entry_name_utf8 == NULL) entry_name_utf8 = entry_name;
+		gchar *sub_name_utf8 = g_strdup_printf("%s#%s", file->display_name, entry_name_utf8);
+		file_t *new_file = image_loader_duplicate_file(file, g_strdup(sub_name), sub_name_utf8, sub_name);
+#endif
 		if(new_file->file_data) {
 			g_bytes_unref(new_file->file_data);
 			new_file->file_data = NULL;

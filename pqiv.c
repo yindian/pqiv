@@ -1285,10 +1285,17 @@ void parse_command_line() {/*{{{*/
 	g_option_context_add_group(parser, gtk_get_option_group(TRUE));
 
 	GError *error_pointer = NULL;
+#if defined(_WIN32) && GLIB_CHECK_VERSION(2, 40, 0)
+	if(g_option_context_parse_strv(parser, &global_argv, &error_pointer) == FALSE) {
+		g_printerr("%s\n", error_pointer->message);
+		exit(1);
+	}
+#else
 	if(g_option_context_parse(parser, &global_argc, &global_argv, &error_pointer) == FALSE) {
 		g_printerr("%s\n", error_pointer->message);
 		exit(1);
 	}
+#endif
 
 	// User didn't specify any files to load; perhaps some help on how to use
 	// pqiv would be useful...
@@ -8032,7 +8039,11 @@ int main(int argc, char *argv[]) {
 #endif
 
 	global_argc = argc;
+#if defined(_WIN32) && GLIB_CHECK_VERSION(2, 40, 0)
+	global_argv = g_win32_get_command_line();
+#else
 	global_argv = argv;
+#endif
 
 	parse_configuration_file();
 	parse_command_line();

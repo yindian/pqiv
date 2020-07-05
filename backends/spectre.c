@@ -30,6 +30,7 @@
 #include <unistd.h>
 #include <libspectre/spectre.h>
 #include <cairo/cairo.h>
+#include <lcms2.h>
 
 typedef struct {
 	int page_number;
@@ -38,6 +39,7 @@ typedef struct {
 	struct SpectrePage *page;
 } file_private_data_spectre_t;
 
+#if LCMS_VERSION < 2060
 #if defined(__GNUC__)
 __attribute__((used))
 #endif
@@ -61,6 +63,7 @@ void cmsPluginTHR(void *context, void *plugin) {
 		#endif
 	}
 }
+#endif
 
 BOSNode *file_type_spectre_alloc(load_images_state_t state, file_t *file) {/*{{{*/
 	BOSNode *first_node = FALSE_POINTER;

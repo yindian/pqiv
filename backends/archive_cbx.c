@@ -85,7 +85,14 @@ BOSNode *file_type_archive_cbx_alloc(load_images_state_t state, file_t *file) {/
         }
 		const gchar *entry_name = archive_entry_pathname(entry);
 
+#if 0
 		file_t *new_file = image_loader_duplicate_file(file, NULL, g_strdup_printf("%s#%s", file->display_name, entry_name), g_strdup_printf("%s#%s", file->sort_name, entry_name));
+#else
+		const gchar *entry_name_utf8 = g_utf8_validate(entry_name, -1, NULL) ? entry_name : archive_entry_pathname_utf8(entry);
+		if (entry_name_utf8 == NULL) entry_name_utf8 = entry_name;
+		gchar *sub_name_utf8 = g_strdup_printf("%s#%s", file->display_name, entry_name_utf8);
+		file_t *new_file = image_loader_duplicate_file(file, NULL, sub_name_utf8, g_strdup_printf("%s#%s", file->sort_name, entry_name));
+#endif
 		new_file->private = g_slice_new0(file_private_data_archive_t);
 		((file_private_data_archive_t *)new_file->private)->entry_name = g_strdup(entry_name);
 
