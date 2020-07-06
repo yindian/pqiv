@@ -261,7 +261,11 @@ GBytes *buffered_file_as_bytes(file_t *file, GInputStream *data, GError **error_
 				goffset input_file_size = g_file_info_get_size(file_info);
 				g_object_unref(file_info);
 
+#if 0
 				int fd = open(input_file_abspath, O_RDONLY);
+#else
+				int fd = g_open(input_file_abspath, O_RDONLY, 0644);
+#endif
 				g_free(input_file_abspath);
 				if(fd < 0) {
 					g_object_unref(input_file);
