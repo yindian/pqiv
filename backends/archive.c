@@ -28,17 +28,38 @@
 #include <archive_entry.h>
 #include <string.h>
 
+#if ARCHIVE_VERSION_NUMBER > 3001002
+#define WITH_EXTERNAL_UNPACKER
+#endif
+
+#ifdef WITH_EXTERNAL_UNPACKER
+typedef enum {
+	X_BUILTIN = 0,
+	X_7ZIP,
+	X_NUM_UNPACKERS
+} unpacker_e;
+static gchar *unpacker_path[X_NUM_UNPACKERS] = {NULL};
+#endif
+
 typedef struct {
 	// The source archive
 	file_t *source_archive;
 
 	// The path to the target file within the archive
 	gchar *entry_name;
+#ifdef WITH_EXTERNAL_UNPACKER
+	size_t entry_size;
+	gboolean check_pass;
+	unpacker_e tool;
+#endif
 } file_loader_delegate_archive_t;
 
 #if ARCHIVE_VERSION_NUMBER > 3001002
 static int pass_inited = 0;
 static GList *pass_list = NULL;
+#ifdef WITH_EXTERNAL_UNPACKER
+static const gchar *single_pass = NULL;
+#endif
 static void do_parse_passphrase_file(const gchar *filename) {/*{{{*/
 	GFile *f = g_file_new_for_path(filename);
 	GFileInputStream *fis = g_file_read(f, NULL, NULL);
@@ -48,7 +69,15 @@ static void do_parse_passphrase_file(const gchar *filename) {/*{{{*/
 			char *line;
 			gsize len;
 			while ((line = g_data_input_stream_read_line(dis, &len, NULL, NULL)) != NULL) {
+#ifdef WITH_EXTERNAL_UNPACKER
+				gchar *s = g_strdup_printf("-p%s", line);
+				if (s) {
+					pass_list = g_list_append(pass_list, s + 2);
+				}
+				(void) len;
+#else
 				pass_list = g_list_append(pass_list, g_strndup(line, len));
+#endif
 			}
 			g_object_unref(dis);
 		}
@@ -136,6 +165,86 @@ void file_type_archive_data_free(file_loader_delegate_archive_t *data) {/*{{{*/
 
 GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{{{*/
 	const file_loader_delegate_archive_t *archive_data = g_bytes_get_data(file->file_data, NULL);
+#ifdef WITH_EXTERNAL_UNPACKER
+	if (archive_data->tool != X_BUILTIN) {
+		const gchar *argv[] = {
+			unpacker_path[archive_data->tool],
+			"-p",
+			"-so",
+			"e",
+			archive_data->source_archive->file_name,
+			archive_data->entry_name,
+			NULL
+		};
+		gchar *output, *error;
+		gint exit_status;
+		if (archive_data->check_pass) {
+			if (single_pass) {
+				argv[1] = single_pass - 2;
+				if (g_spawn_sync(NULL, (gchar **) argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, &output, &error, &exit_status, error_pointer)) {
+					if (g_spawn_check_exit_status(exit_status, error_pointer)) {
+						g_free(error);
+						return g_bytes_new_take(output, archive_data->entry_size);
+					}
+					else {
+						g_clear_error(error_pointer);
+						g_free(output);
+						g_free(error);
+						single_pass = NULL;
+					}
+				}
+				else {
+					g_printerr("Failed to spawn unpacker to load archive %s: %s\n", file->display_name, error_pointer && *error_pointer ? (*error_pointer)->message : "Unknown error");
+					g_clear_error(error_pointer);
+					return NULL;
+				}
+			}
+			GList *pass;
+			for (pass = pass_list; pass; pass = g_list_next(pass)) {
+				argv[1] = (gchar *) pass->data - 2;
+				if (g_spawn_sync(NULL, (gchar **) argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, &output, &error, &exit_status, error_pointer)) {
+					if (g_spawn_check_exit_status(exit_status, error_pointer)) {
+						g_free(error);
+						single_pass = argv[1] + 2;
+						return g_bytes_new_take(output, archive_data->entry_size);
+					}
+					else {
+						g_clear_error(error_pointer);
+						g_free(output);
+						g_free(error);
+					}
+				}
+				else {
+					g_printerr("Failed to spawn unpacker to load archive %s: %s\n", file->display_name, error_pointer && *error_pointer ? (*error_pointer)->message : "Unknown error");
+					g_clear_error(error_pointer);
+					return NULL;
+				}
+			}
+		}
+		{
+			argv[1] = "-p";
+			if (g_spawn_sync(NULL, (gchar **) argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, &output, &error, &exit_status, error_pointer)) {
+				if (g_spawn_check_exit_status(exit_status, error_pointer)) {
+					g_free(error);
+					return g_bytes_new_take(output, archive_data->entry_size);
+				}
+				else {
+					g_printerr("Failed to unpack archive %s: %s\n", file->display_name, error_pointer && *error_pointer ? (*error_pointer)->message : "Unknown error");
+					g_clear_error(error_pointer);
+					*error_pointer = g_error_new(g_quark_from_static_string("pqiv-archive-error"), 1, "%s", g_strchomp(error));
+					g_free(output);
+					g_free(error);
+					return NULL;
+				}
+			}
+			else {
+				g_printerr("Failed to spawn unpacker to load archive %s: %s\n", file->display_name, error_pointer && *error_pointer ? (*error_pointer)->message : "Unknown error");
+				g_clear_error(error_pointer);
+				return NULL;
+			}
+		}
+	}
+#endif
 
 	GBytes *data = buffered_file_as_bytes(archive_data->source_archive, NULL, error_pointer);
 	if(!data) {
@@ -146,7 +255,7 @@ GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{
 
 	struct archive *archive = file_type_archive_gen_archive(data);
 	if(!archive) {
-		buffered_file_unref(file);
+		buffered_file_unref(archive_data->source_archive);
 		return NULL;
 	}
 
@@ -162,7 +271,7 @@ GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{
 
 			if(archive_read_data(archive, entry_data, entry_size) != (ssize_t)entry_size) {
 				archive_read_free(archive);
-				buffered_file_unref(file);
+				buffered_file_unref(archive_data->source_archive);
 				*error_pointer = g_error_new(g_quark_from_static_string("pqiv-archive-error"), 1, "The file had an unexpected size");
 				return NULL;
 			}
@@ -204,10 +313,38 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 	BOSNode *first_node = FALSE_POINTER;
 
 	struct archive_entry *entry;
+#ifdef WITH_EXTERNAL_UNPACKER
+	unpacker_e tool = X_BUILTIN;
+	int ret = archive_read_next_header(archive, &entry);
+	int format = archive_format(archive);
+	switch (format)
+	{
+		case ARCHIVE_FORMAT_RAR:
+		case ARCHIVE_FORMAT_7ZIP:
+#if ARCHIVE_VERSION_NUMBER >= 3004000
+		case ARCHIVE_FORMAT_RAR_V5:
+#endif
+			if (unpacker_path[X_7ZIP] == NULL) {
+				gchar *path = g_find_program_in_path("7z");
+				unpacker_path[X_7ZIP] = path ? path : FALSE_POINTER;
+			}
+			if (unpacker_path[X_7ZIP] != FALSE_POINTER) {
+				tool = X_7ZIP;
+			}
+			break;
+		default:
+			break;
+	}
+	while(ret == ARCHIVE_OK) {
+#else
 	while(archive_read_next_header(archive, &entry) == ARCHIVE_OK) {
+#endif
         mode_t filetype = archive_entry_filetype(entry);
         if (S_ISDIR(filetype)) {
             archive_read_data_skip(archive);
+#ifdef WITH_EXTERNAL_UNPACKER
+			ret = archive_read_next_header(archive, &entry);
+#endif
             continue;
         }
 		const gchar *entry_name = archive_entry_pathname(entry);
@@ -272,10 +409,26 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 		else if(first_node == FALSE_POINTER) {
 			first_node = node;
 		}
+#ifdef WITH_EXTERNAL_UNPACKER
+		new_file_data->entry_size = archive_entry_size(entry);
+		if (node && tool != X_BUILTIN && archive_entry_is_encrypted(entry)) {
+			new_file_data->check_pass = TRUE;
+			new_file_data->tool = tool;
+		}
+		else {
+			new_file_data->check_pass = FALSE;
+			new_file_data->tool = X_BUILTIN;
+		}
+#endif
 
 		g_free(name_lowerc);
 
 		archive_read_data_skip(archive);
+#ifdef WITH_EXTERNAL_UNPACKER
+		ret = archive_read_next_header(archive, &entry);
+#else
+		/* } */
+#endif
 	}
 
 	archive_read_free(archive);
