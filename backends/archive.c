@@ -57,9 +57,6 @@ typedef struct {
 #if ARCHIVE_VERSION_NUMBER > 3001002
 static int pass_inited = 0;
 static GList *pass_list = NULL;
-#ifdef WITH_EXTERNAL_UNPACKER
-static const gchar *single_pass = NULL;
-#endif
 static void do_parse_passphrase_file(const gchar *filename) {/*{{{*/
 	GFile *f = g_file_new_for_path(filename);
 	GFileInputStream *fis = g_file_read(f, NULL, NULL);
@@ -88,6 +85,10 @@ static void do_parse_passphrase_file(const gchar *filename) {/*{{{*/
 static void parse_passphrase_file() {/*{{{*/
 	// Check for a configuration file
 	GQueue *test_dirs = g_queue_new();
+	const gchar *env_config_file = g_getenv("PQIVPASS");
+	if(env_config_file) {
+		g_queue_push_tail(test_dirs, g_strdup(env_config_file));
+	}
 	const gchar *config_dir = g_getenv("XDG_CONFIG_HOME");
 	if(!config_dir) {
 		g_queue_push_tail(test_dirs, g_build_filename(g_getenv("HOME"), ".config", "pqivpass", NULL));
@@ -170,6 +171,7 @@ GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{
 		const gchar *argv[] = {
 			unpacker_path[archive_data->tool],
 			"-p",
+			"-ba",
 			"-so",
 			"e",
 			archive_data->source_archive->file_name,
@@ -179,37 +181,21 @@ GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{
 		gchar *output, *error;
 		gint exit_status;
 		if (archive_data->check_pass) {
-			if (single_pass) {
-				argv[1] = single_pass - 2;
-				if (g_spawn_sync(NULL, (gchar **) argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, &output, &error, &exit_status, error_pointer)) {
-					if (g_spawn_check_exit_status(exit_status, error_pointer)) {
-						g_free(error);
-						return g_bytes_new_take(output, archive_data->entry_size);
-					}
-					else {
-						g_clear_error(error_pointer);
-						g_free(output);
-						g_free(error);
-						single_pass = NULL;
-					}
-				}
-				else {
-					g_printerr("Failed to spawn unpacker to load archive %s: %s\n", file->display_name, error_pointer && *error_pointer ? (*error_pointer)->message : "Unknown error");
-					g_clear_error(error_pointer);
-					return NULL;
-				}
-			}
 			GList *pass;
 			for (pass = pass_list; pass; pass = g_list_next(pass)) {
 				argv[1] = (gchar *) pass->data - 2;
 				if (g_spawn_sync(NULL, (gchar **) argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, &output, &error, &exit_status, error_pointer)) {
 					if (g_spawn_check_exit_status(exit_status, error_pointer)) {
 						g_free(error);
-						single_pass = argv[1] + 2;
+						pass_list = g_list_remove_link(pass_list, pass);
+						pass_list = g_list_concat(pass, pass_list);
 						return g_bytes_new_take(output, archive_data->entry_size);
 					}
 					else {
 						g_clear_error(error_pointer);
+						if (strstr(error, "Unsupported Method")) {
+							*error_pointer = g_error_new(g_quark_from_static_string("pqiv-archive-error"), 1, "%s", g_strchomp(error));
+						}
 						g_free(output);
 						g_free(error);
 					}
