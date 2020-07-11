@@ -307,6 +307,7 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 
 	struct archive_entry *entry;
 #ifdef WITH_EXTERNAL_UNPACKER
+	BOSNode *last_node = NULL;
 	unpacker_e tool = X_BUILTIN;
 	int ret = archive_read_next_header(archive, &entry);
 	int format = archive_format(archive);
@@ -412,6 +413,10 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 		}
 		else if(first_node == FALSE_POINTER) {
 			first_node = node;
+			last_node = node;
+		}
+		else {
+			last_node = node;
 		}
 
 		g_free(name_lowerc);
@@ -425,7 +430,10 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 	}
 
 #ifdef WITH_EXTERNAL_UNPACKER
-	if (first_node == FALSE_POINTER && tool != X_BUILTIN && archive_entry_is_metadata_encrypted(entry)) {
+	const char *error_message = archive_error_string(archive);
+	if (tool != X_BUILTIN && (
+					(first_node == FALSE_POINTER && archive_entry_is_metadata_encrypted(entry)) ||
+					(first_node == last_node && error_message && strstr(error_message, " solid ")))) {
 		archive_read_free(archive);
 		buffered_file_unref(file);
 		const gchar *argv[] = {
@@ -439,7 +447,7 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 		};
 		gchar *output, *error;
 		gint exit_status;
-		{
+		if (first_node == FALSE_POINTER) {
 			GList *pass;
 			for (pass = pass_list; pass; pass = g_list_next(pass)) {
 				argv[1] = (gchar *) pass->data - 2;
@@ -450,7 +458,7 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 						pass_list = g_list_concat(pass, pass_list);
 						const gchar *entry_name = NULL;
 						gchar *p, *q = NULL;
-						for (p = strchr(output, '\n'); p; p = q) {
+						for (p = output - 1; p; p = q) {
 							q = strchr(++p, '\n');
 							if (q && q - p > 7) {
 								if (strncmp(p, "Path = ", 7) == 0) {
@@ -511,7 +519,7 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 					}
 					else {
 						if (strstr(error, "Unsupported Method")) {
-							g_printerr("Failed to unpack archive %s: %s: %s\n", file->display_name, error_pointer ? error_pointer->message : "Unknown error", g_strstrip(error[0] ? error : output));
+							g_printerr("Failed to list encrypted archive %s: %s: %s\n", file->display_name, error_pointer ? error_pointer->message : "Unknown error", g_strstrip(error[0] ? error : output));
 							g_clear_error(&error_pointer);
 							g_free(output);
 							g_free(error);
@@ -523,10 +531,94 @@ BOSNode *file_type_archive_alloc(load_images_state_t state, file_t *file) {/*{{{
 					}
 				}
 				else {
-					g_printerr("Failed to spawn unpacker to load archive %s: %s\n", file->display_name, error_pointer ? error_pointer->message : "Unknown error");
+					g_printerr("Failed to spawn unpacker to list archive %s: %s\n", file->display_name, error_pointer ? error_pointer->message : "Unknown error");
 					g_clear_error(&error_pointer);
 					break;
 				}
+			}
+		}
+		else {
+			file_t *first_file = (file_t *) first_node->data;
+			const file_loader_delegate_archive_t *first_data = g_bytes_get_data(first_file->file_data, NULL);
+			const gchar *first_entry_name = first_data->entry_name;
+			if (g_spawn_sync(NULL, (gchar **) argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, &output, &error, &exit_status, &error_pointer)) {
+				{
+					const gchar *entry_name = NULL;
+					gchar *p, *q = NULL;
+					gboolean first = TRUE;
+					for (p = output - 1; p; p = q) {
+						q = strchr(++p, '\n');
+						if (q && q - p > 7) {
+							if (strncmp(p, "Path = ", 7) == 0) {
+								entry_name = p + 7;
+								if (q[-1] == '\r') {
+									q[-1] = '\0';
+								}
+								else {
+									*q = '\0';
+								}
+							}
+							else if (strncmp(p, "Size = ", 7) == 0) {
+								long entry_size = atol(p + 7);
+								if (entry_size && entry_name) {
+									if (first) {
+										first = FALSE;
+										if (strcmp(entry_name, first_entry_name) == 0) {
+											continue;
+										}
+										else {
+											g_printerr("Unexpected first entry for solid archive: should be %s, got %s\n", first_entry_name, entry_name);
+										}
+									}
+									gchar *sub_name = g_strdup_printf("%s#%s", file->display_name, entry_name);
+									file_t *new_file = image_loader_duplicate_file(file, g_strdup(sub_name), g_strdup(sub_name), sub_name);
+									if(new_file->file_data) {
+										g_bytes_unref(new_file->file_data);
+										new_file->file_data = NULL;
+									}
+									size_t delegate_struct_alloc_size = sizeof(file_loader_delegate_archive_t) + strlen(entry_name) + 2;
+									file_loader_delegate_archive_t *new_file_data = g_malloc(delegate_struct_alloc_size);
+									new_file_data->source_archive = image_loader_duplicate_file(file, NULL, NULL, NULL);
+									new_file_data->entry_name     = (char *)(new_file_data) + sizeof(file_loader_delegate_archive_t) + 1;
+									memcpy(new_file_data->entry_name, entry_name, strlen(entry_name) + 1);
+									new_file_data->entry_size = entry_size;
+									new_file_data->check_pass = TRUE;
+									new_file_data->tool = tool;
+									new_file->file_data = g_bytes_new_with_free_func(new_file_data, delegate_struct_alloc_size, (GDestroyNotify)file_type_archive_data_free, new_file_data);
+									new_file->file_flags |= FILE_FLAGS_MEMORY_IMAGE;
+									new_file->file_data_loader = file_type_archive_data_loader;
+
+									// Find an appropriate handler for this file
+									gchar *name_lowerc = g_utf8_strdown(entry_name, -1);
+									file_filter_info.filename = file_filter_info.display_name = name_lowerc;
+
+									// Check if one of the file type handlers can handle this file
+									BOSNode *node = load_images_handle_parameter_find_handler(entry_name, state, new_file, &file_filter_info);
+									if(node == NULL) {
+										// No handler found. We could fall back to using a default. Free new_file instead.
+										file_free(new_file);
+									}
+									else if(node == FALSE_POINTER) {
+										// File type is known, but loading failed; new_file has already been free()d
+										node = NULL;
+									}
+
+									g_free(name_lowerc);
+								}
+							}
+						}
+					}
+				}
+				if (!g_spawn_check_exit_status(exit_status, &error_pointer)) {
+					g_printerr("Failed to list solid archive %s: %s: %s\n", file->display_name, error_pointer ? error_pointer->message : "Unknown error", g_strstrip(error[0] ? error : output));
+					g_clear_error(&error_pointer);
+				}
+				g_free(output);
+				g_free(error);
+			}
+			else {
+				g_printerr("Failed to spawn unpacker to list archive %s: %s\n", file->display_name, error_pointer ? error_pointer->message : "Unknown error");
+				g_clear_error(&error_pointer);
 			}
 		}
 	}
