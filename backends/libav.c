@@ -449,6 +449,16 @@ void file_type_libav_initializer(file_type_handler_t *info) {/*{{{*/
 			}
 			g_strfreev(fmts);
 		}
+		else if (iter->name) {
+			if (strncmp(iter->name, "mpeg", 4) == 0) {
+				if (iter->name[4] == '\0') {
+					gtk_file_filter_add_pattern(info->file_types_handled, "*.mpg");
+				}
+				else if (strcmp(iter->name + 4, "ts") == 0) {
+					gtk_file_filter_add_pattern(info->file_types_handled, "*.ts");
+				}
+			}
+		}
 	}
 
 	// Register as general handler for video/* MIME types
