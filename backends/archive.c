@@ -126,6 +126,20 @@ static void parse_passphrase_file() {/*{{{*/
 }/*}}}*/
 #endif
 
+#ifndef NO_LAZY_UNREF_FILE_BUFFER
+static gboolean buffered_file_unref_lazy_cb(gpointer user_data) {/*{{{*/
+	file_t *file = (file_t *) user_data;
+	buffered_file_unref(file);
+	file_free(file);
+	return FALSE;
+}/*}}}*/
+static void buffered_file_unref_lazy(file_t *file) {/*{{{*/
+	file = image_loader_duplicate_file(file, NULL, NULL, NULL);
+	g_timeout_add_seconds(2, buffered_file_unref_lazy_cb, file);
+}/*}}}*/
+#define buffered_file_unref buffered_file_unref_lazy
+#endif
+
 static struct archive *file_type_archive_gen_archive(GBytes *data) {/*{{{*/
 	struct archive *archive = archive_read_new();
 	archive_read_support_format_zip(archive);
