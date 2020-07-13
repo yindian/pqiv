@@ -106,10 +106,14 @@ static int file_type_libav_memory_access_reader(void *opaque, uint8_t *buf, int 
 
 static int64_t file_type_libav_memory_access_seeker(void *opaque, int64_t offset, int whence) {/*{{{*/
 	file_private_data_libav_t *private = opaque;
+	int size_query = (whence & AVSEEK_SIZE);
 	whence &= (SEEK_CUR | SEEK_SET | SEEK_END);
 
 	gsize data_size = 0;
 	g_bytes_get_data(private->file_data, &data_size);
+	if (size_query) {
+		return data_size;
+	}
 
 	switch(whence) {
 		case SEEK_CUR:
