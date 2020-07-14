@@ -462,6 +462,9 @@ void file_type_libav_initializer(file_type_handler_t *info) {/*{{{*/
 					gtk_file_filter_add_pattern(info->file_types_handled, "*.ts");
 				}
 			}
+			else if (strcmp(iter->name, "asf") == 0) {
+				gtk_file_filter_add_pattern(info->file_types_handled, "*.wmv");
+			}
 		}
 	}
 
