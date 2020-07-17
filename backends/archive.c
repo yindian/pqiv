@@ -30,6 +30,7 @@
 #include <stdlib.h>
 
 #if ARCHIVE_VERSION_NUMBER > 3001002
+#define SUPPORT_PASSPHRASE
 #define WITH_EXTERNAL_UNPACKER
 #endif
 
@@ -56,6 +57,11 @@ typedef struct {
 } file_loader_delegate_archive_t;
 
 #if ARCHIVE_VERSION_NUMBER > 3001002
+#define SUPPORT_PASSPHRASE
+#endif
+#ifdef SUPPORT_PASSPHRASE
+struct archive_read;
+extern const char * __archive_read_next_passphrase(struct archive_read *);
 static int pass_inited = 0;
 static GList *pass_list = NULL;
 static void do_parse_passphrase_file(const gchar *filename) {/*{{{*/
@@ -147,7 +153,7 @@ static struct archive *file_type_archive_gen_archive(GBytes *data) {/*{{{*/
 	archive_read_support_format_7zip(archive);
 	archive_read_support_format_tar(archive);
 	archive_read_support_filter_all(archive);
-#if ARCHIVE_VERSION_NUMBER > 3001002
+#ifdef SUPPORT_PASSPHRASE
 	if (!pass_inited) {
 		parse_passphrase_file();
 	}
@@ -257,9 +263,17 @@ GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{
 		return NULL;
 	}
 
+#ifdef SUPPORT_PASSPHRASE
+	GList *old_pass_list = pass_list;
+loop_read_archive:
+	(void) 0;
+#endif
 	struct archive *archive = file_type_archive_gen_archive(data);
 	if(!archive) {
 		buffered_file_unref(archive_data->source_archive);
+#ifdef SUPPORT_PASSPHRASE
+		pass_list = old_pass_list;
+#endif
 		return NULL;
 	}
 
@@ -273,8 +287,34 @@ GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{
 			entry_size = archive_entry_size(entry);
 			entry_data = g_malloc(entry_size);
 
+#if 0
 			if(archive_read_data(archive, entry_data, entry_size) != (ssize_t)entry_size) {
+#else
+#if 0 // for brace pairing only
+			}
+#endif
+			/* request to read extra byte to force CRC check for ZIP archives
+			 * cf. zip_read_data_none() */
+			if(archive_read_data(archive, entry_data, entry_size + 1) != (ssize_t)entry_size) {
+#endif
 				*error_pointer = g_error_new(g_quark_from_static_string("pqiv-archive-error"), 1, "The file had an unexpected size : %s", archive_error_string(archive));
+#ifdef SUPPORT_PASSPHRASE
+				if (archive_entry_is_encrypted(entry) && pass_list) {
+					const gchar *next_pass = __archive_read_next_passphrase((struct archive_read *) archive);
+					if (next_pass) {
+						GList *pass;
+						for (pass = pass_list; pass; pass = g_list_next(pass)) {
+							if (strcmp(next_pass, pass->data) == 0) {
+								g_clear_error(error_pointer);
+								pass_list = pass;
+								archive_read_free(archive);
+								goto loop_read_archive;
+							}
+						}
+					}
+				}
+				pass_list = old_pass_list;
+#endif
 				archive_read_free(archive);
 				buffered_file_unref(archive_data->source_archive);
 #if 0
@@ -286,6 +326,9 @@ GBytes *file_type_archive_data_loader(file_t *file, GError **error_pointer) {/*{
 			break;
 		}
 	}
+#ifdef SUPPORT_PASSPHRASE
+	pass_list = old_pass_list;
+#endif
 
 	archive_read_free(archive);
 	buffered_file_unref(archive_data->source_archive);
