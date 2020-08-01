@@ -8127,7 +8127,17 @@ int main(int argc, char *argv[]) {
 	// Note: This still won't free all the data, because we hold weak
 	// references. But that doesn't matter, the unloading is the important
 	// thing as it removes any temporary files.
+#if 0
 	bostree_destroy(file_tree);
+#else
+	BOSTree *old_file_tree = file_tree;
+	// avoid bad tree->free_function in bostree_node_weak_unref() called in image_loader_thread()
+	// ignoring memory leaks for the node and file_tree
+	file_tree = bostree_new(
+			option_sort ? (BOSTree_cmp_function)strnatcasecmp : (BOSTree_cmp_function)image_tree_float_compare,
+			NULL);
+	bostree_destroy(old_file_tree);
+#endif
 	D_UNLOCK(file_tree);
 
 	return 0;
